@@ -1,0 +1,37 @@
+# Cluster configuration file
+clusters:
+  - name: "production-cluster"
+    description: "Production environment cluster"
+    nodes:
+      - name: "prod-node-01"
+        type: "master"
+        host: "192.168.1.10"
+        collection_method: "ssh"
+      - name: "prod-node-02"
+        type: "worker"
+        host: "192.168.1.11"
+        collection_method: "ssh"
+      - name: "prod-node-03"
+        type: "worker"
+        host: "192.168.1.12"
+        collection_method: "ssh"
+
+  - name: "staging-cluster"
+    description: "Staging environment cluster"
+    nodes:
+      - name: "staging-node-01"
+        type: "master"
+        host: "192.168.2.10"
+        collection_method: "local"
+      - name: "staging-node-02"
+        type: "worker"
+        host: "192.168.2.11"
+        collection_method: "local"
+
+  - name: "dev-cluster"
+    description: "Development environment cluster"
+    nodes:
+      - name: "dev-node-01"
+        type: "standalone"
+        host: "localhost"
+        collection_method: "local"

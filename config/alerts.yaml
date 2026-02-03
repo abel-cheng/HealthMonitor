@@ -1,0 +1,47 @@
+# Alert rules configuration
+rules:
+  - name: "high_cpu_usage"
+    metric: "cpu_percent"
+    operator: ">"
+    threshold: 90
+    severity: "critical"
+    actions:
+      - type: "log"
+        params:
+          level: "error"
+      - type: "webhook"
+        params:
+          url: "http://localhost:8080/alert"
+
+  - name: "high_memory_usage"
+    metric: "memory_percent"
+    operator: ">"
+    threshold: 85
+    severity: "warning"
+    actions:
+      - type: "log"
+        params:
+          level: "warning"
+
+  - name: "low_disk_space"
+    metric: "disk_percent"
+    operator: ">"
+    threshold: 90
+    severity: "critical"
+    actions:
+      - type: "log"
+        params:
+          level: "error"
+      - type: "email"
+        params:
+          to: "admin@example.com"
+
+  - name: "node_unreachable"
+    metric: "node_status"
+    operator: "=="
+    threshold: 0
+    severity: "critical"
+    actions:
+      - type: "log"
+        params:
+          level: "critical"

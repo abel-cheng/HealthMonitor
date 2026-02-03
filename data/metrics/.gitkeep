@@ -1,0 +1,2 @@
+# This directory stores collected metrics in JSON format
+# Files are organized by: cluster/node/year/month/day/hour.json

@@ -1,0 +1,51 @@
+# Collector CLI configuration
+# This file is used by collector_cli.py when running with --config option
+
+# Cluster provider settings
+# Available providers: powershell, file, env
+provider:
+  # Provider type (default: powershell)
+  type: "powershell"
+  
+  # PowerShell provider settings
+  powershell:
+    # Cluster name to use (default: local-cluster)
+    cluster_name: "local-cluster"
+    # Optional: Path to custom PowerShell script for cluster discovery
+    # script_path: "scripts/get_clusters.ps1"
+  
+  # File provider settings
+  file:
+    # Path to clusters configuration file
+    config_path: "config/clusters.yaml"
+
+# Node identification (used when specifying --cluster and --node directly)
+node:
+  name: "local-node"
+  cluster: "local-cluster"
+
+# Output settings
+output:
+  # Directory for metric storage
+  dir: "data/metrics"
+  # Set to true to output JSON to stdout instead of storing to files
+  stdout: false
+
+# Metrics to collect (leave empty for all metrics)
+# Available metrics:
+#   - cpu_percent
+#   - memory_percent
+#   - memory_used
+#   - disk_percent
+#   - disk_used
+#   - network_bytes_recv
+#   - network_bytes_sent
+#   - node_status
+#   - load_average
+#   - process_count
+metrics: []
+
+# Disk paths to monitor (for disk_percent and disk_used)
+disk_paths:
+  - "C:\\"  # Windows
+  # - "/"   # Linux

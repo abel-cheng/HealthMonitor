@@ -1,0 +1,25 @@
+# Application settings
+app:
+  name: "HealthMonitor"
+  debug: true
+
+# Data storage settings
+storage:
+  metrics_dir: "data/metrics"
+  retention_days: 7
+
+# Collection settings
+collection:
+  interval_seconds: 60
+  timeout_seconds: 30
+
+# Web server settings
+web:
+  host: "0.0.0.0"
+  port: 5000
+
+# Cluster info provider
+cluster_provider:
+  type: "file"  # Options: file, database, powershell
+  config:
+    file_path: "config/clusters.yaml"
