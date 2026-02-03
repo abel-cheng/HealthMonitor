@@ -11,9 +11,9 @@ from datetime import datetime
 from typing import List, Optional, Callable
 import logging
 
-from cluster import ClusterInfoProvider
-from metrics import MetricRegistry, MetricStorage
-from alerts import AlertManager
+from src.cluster import ClusterInfoProvider
+from src.metrics import MetricRegistry, MetricStorage
+from src.alerts import AlertManager
 
 logger = logging.getLogger(__name__)
 

@@ -131,10 +131,31 @@ class DatabaseClusterProvider(ClusterInfoProvider):
 
 
 class PowerShellClusterProvider(ClusterInfoProvider):
-    """Cluster information provider that uses PowerShell commands."""
+    """Cluster information provider that uses dmclient.exe via PowerShell."""
 
-    def __init__(self, script_path: Optional[str] = None):
-        self.script_path = script_path
+    # CSV column indices based on machineinfo.csv format
+    COL_MACHINE_NAME = 0
+    COL_MACHINE_FUNCTION = 2
+    COL_STATIC_IP = 6
+    COL_STATUS = 10
+    COL_ENVIRONMENT = 17
+
+    def __init__(self, region: str, cluster_name: str,
+                 dmclient_path: str = ".\\dmclient.exe",
+                 machine_function: str = "CH"):
+        """
+        Initialize PowerShellClusterProvider.
+
+        Args:
+            region: The region code (e.g., "MWHE01")
+            cluster_name: The cluster name (e.g., "MTTitanMetricsBE-Prod-MWHE01")
+            dmclient_path: Path to dmclient.exe
+            machine_function: Machine function filter (e.g., "CH")
+        """
+        self.region = region
+        self.cluster_name = cluster_name
+        self.dmclient_path = dmclient_path
+        self.machine_function = machine_function
         self._clusters: List[Cluster] = []
         self.refresh()
 
@@ -150,74 +171,88 @@ class PowerShellClusterProvider(ClusterInfoProvider):
     def refresh(self) -> None:
         self._clusters = []
         try:
-            if self.script_path and os.path.exists(self.script_path):
-                # Execute custom PowerShell script
-                result = subprocess.run(
-                    ['powershell', '-ExecutionPolicy', 'Bypass', '-File', self.script_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=60
-                )
-            else:
-                # Default PowerShell command to get local computer info
-                ps_command = '''
-                $computerInfo = Get-ComputerInfo | Select-Object CsName, CsDomain
-                $result = @{
-                    clusters = @(
-                        @{
-                            name = "local-cluster"
-                            description = "Local machine cluster"
-                            nodes = @(
-                                @{
-                                    name = $computerInfo.CsName
-                                    type = "standalone"
-                                    host = "localhost"
-                                    collection_method = "local"
-                                }
-                            )
-                        }
-                    )
-                }
-                $result | ConvertTo-Json -Depth 10
-                '''
-                result = subprocess.run(
-                    ['powershell', '-Command', ps_command],
-                    capture_output=True,
-                    text=True,
-                    timeout=60
-                )
+            # Execute dmclient.exe command via PowerShell
+            # Command: .\dmclient.exe -C <region> -c "GetMachineInfo -f <function> -w <cluster_name>"
+            dm_command = f'GetMachineInfo -f {self.machine_function} -w {self.cluster_name}'
+            result = subprocess.run(
+                ['powershell', '-Command',
+                 f'{self.dmclient_path} -C {self.region} -c "{dm_command}"'],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
 
             if result.returncode == 0 and result.stdout:
-                data = json.loads(result.stdout)
-                self._parse_cluster_data(data)
+                self._parse_csv_output(result.stdout)
 
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
-            # Fallback to empty clusters on error
+        except subprocess.TimeoutExpired:
+            # Timeout - leave clusters empty
+            pass
+        except Exception:
+            # Other errors - leave clusters empty
             pass
 
-    def _parse_cluster_data(self, data: Dict) -> None:
-        """Parse cluster data from PowerShell output."""
-        if 'clusters' not in data:
-            return
+    def _parse_csv_output(self, csv_content: str) -> None:
+        """Parse CSV output from dmclient.exe and extract node information."""
+        nodes = self.parse_machine_info_csv(csv_content)
 
-        for cluster_data in data['clusters']:
-            nodes = []
-            for node_data in cluster_data.get('nodes', []):
-                node = Node(
-                    name=node_data.get('name', 'unknown'),
-                    type=node_data.get('type', 'worker'),
-                    host=node_data.get('host', 'localhost'),
-                    collection_method=node_data.get('collection_method', 'local'),
-                    attributes=node_data.get('attributes', {})
-                )
-                nodes.append(node)
-
+        if nodes:
             cluster = Cluster(
-                name=cluster_data.get('name', 'unknown'),
-                description=cluster_data.get('description', ''),
+                name=self.cluster_name,
+                description=f"Cluster {self.cluster_name} in region {self.region}",
                 nodes=nodes
             )
             self._clusters.append(cluster)
+
+    @classmethod
+    def parse_machine_info_csv(cls, csv_content: str) -> List[Node]:
+        """
+        Parse machineinfo CSV content and extract nodes.
+
+        Args:
+            csv_content: The CSV content string from dmclient.exe output
+
+        Returns:
+            List of Node objects parsed from the CSV
+        """
+        nodes = []
+        lines = csv_content.strip().split('\n')
+
+        for line in lines:
+            # Skip comment lines (starting with #) and empty lines
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            fields = line.split(',')
+
+            # Ensure we have enough fields
+            if len(fields) <= cls.COL_ENVIRONMENT:
+                continue
+
+            machine_name = fields[cls.COL_MACHINE_NAME].strip()
+            machine_function = fields[cls.COL_MACHINE_FUNCTION].strip()
+            static_ip = fields[cls.COL_STATIC_IP].strip()
+            status = fields[cls.COL_STATUS].strip()
+            environment = fields[cls.COL_ENVIRONMENT].strip()
+
+            # Skip if machine name is empty
+            if not machine_name:
+                continue
+
+            node = Node(
+                name=machine_name,
+                type=machine_function,
+                host=static_ip if static_ip else machine_name,
+                collection_method="remote",
+                attributes={
+                    "status": status,
+                    "environment": environment
+                }
+            )
+            nodes.append(node)
+
+        return nodes
 
 
 class ClusterProviderFactory:
@@ -231,6 +266,11 @@ class ClusterProviderFactory:
         elif provider_type == 'database':
             return DatabaseClusterProvider(config.get('connection_string', ''))
         elif provider_type == 'powershell':
-            return PowerShellClusterProvider(config.get('script_path'))
+            return PowerShellClusterProvider(
+                region=config.get('region', ''),
+                cluster_name=config.get('cluster_name', ''),
+                dmclient_path=config.get('dmclient_path', '.\\dmclient.exe'),
+                machine_function=config.get('machine_function', 'CH')
+            )
         else:
             raise ValueError(f"Unknown provider type: {provider_type}")
