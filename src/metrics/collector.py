@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional, Callable
 import json
 import os
 import uuid
-import psutil
+import requests
 import threading
 import time
 
@@ -59,129 +59,38 @@ class MetricCollector(ABC):
         )
 
 
-class CPUPercentCollector(MetricCollector):
-    """Collects CPU usage percentage."""
+class ClickHouseStatusCollector(MetricCollector):
+    """
+    Collects ClickHouse server health status via HTTP ping endpoint.
+    
+    Uses: /ping endpoint which returns 'Ok.' if server is healthy.
+    Equivalent curl: curl 'http://host:8123/ping'
+    
+    Returns: 1 = healthy, 0 = unhealthy/unreachable
+    """
 
-    def __init__(self, interval: int = 60):
-        super().__init__(name="cpu_percent", unit="%", interval=interval)
+    def __init__(self, host: str = "localhost", port: int = 8123,
+                 interval: int = 60, timeout: int = 10):
+        super().__init__(name="clickhouse_status", unit="", interval=interval)
+        self.host = host
+        self.port = port
+        self.timeout = timeout
 
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        value = psutil.cpu_percent(interval=1)
-        return self._create_metric(node_name, cluster_name, value)
-
-
-class MemoryPercentCollector(MetricCollector):
-    """Collects memory usage percentage."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="memory_percent", unit="%", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        memory = psutil.virtual_memory()
-        return self._create_metric(node_name, cluster_name, memory.percent)
-
-
-class MemoryUsedCollector(MetricCollector):
-    """Collects used memory in bytes."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="memory_used", unit="bytes", interval=interval)
+    def _get_base_url(self) -> str:
+        return f"http://{self.host}:{self.port}"
 
     def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        memory = psutil.virtual_memory()
-        return self._create_metric(node_name, cluster_name, memory.used)
-
-
-class DiskPercentCollector(MetricCollector):
-    """Collects disk usage percentage."""
-
-    def __init__(self, interval: int = 60, path: str = "/"):
-        super().__init__(name="disk_percent", unit="%", interval=interval)
-        self.path = path
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        """
+        Check ClickHouse health via /ping endpoint.
+        Returns 1 if healthy, 0 if unhealthy or unreachable.
+        """
         try:
-            disk = psutil.disk_usage(self.path)
-            value = disk.percent
+            url = f"{self._get_base_url()}/ping"
+            response = requests.get(url, timeout=self.timeout)
+            status = 1 if response.status_code == 200 and response.text.strip() == "Ok." else 0
         except Exception:
-            value = 0
-        return self._create_metric(node_name, cluster_name, value)
-
-
-class DiskUsedCollector(MetricCollector):
-    """Collects used disk space in bytes."""
-
-    def __init__(self, interval: int = 60, path: str = "/"):
-        super().__init__(name="disk_used", unit="bytes", interval=interval)
-        self.path = path
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        try:
-            disk = psutil.disk_usage(self.path)
-            value = disk.used
-        except Exception:
-            value = 0
-        return self._create_metric(node_name, cluster_name, value)
-
-
-class NetworkBytesRecvCollector(MetricCollector):
-    """Collects network bytes received."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="network_bytes_recv", unit="bytes", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        net_io = psutil.net_io_counters()
-        return self._create_metric(node_name, cluster_name, net_io.bytes_recv)
-
-
-class NetworkBytesSentCollector(MetricCollector):
-    """Collects network bytes sent."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="network_bytes_sent", unit="bytes", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        net_io = psutil.net_io_counters()
-        return self._create_metric(node_name, cluster_name, net_io.bytes_sent)
-
-
-class NodeStatusCollector(MetricCollector):
-    """Collects node availability status (1 = up, 0 = down)."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="node_status", unit="", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        # For local collection, node is always up
-        # Remote collection would implement actual health check
-        return self._create_metric(node_name, cluster_name, 1)
-
-
-class LoadAverageCollector(MetricCollector):
-    """Collects system load average (1 minute)."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="load_average", unit="", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        try:
-            load_avg = psutil.getloadavg()[0]
-        except (AttributeError, OSError):
-            # getloadavg not available on Windows
-            load_avg = psutil.cpu_percent() / 100.0 * psutil.cpu_count()
-        return self._create_metric(node_name, cluster_name, load_avg)
-
-
-class ProcessCountCollector(MetricCollector):
-    """Collects number of running processes."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="process_count", unit="", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        count = len(psutil.pids())
-        return self._create_metric(node_name, cluster_name, count)
+            status = 0
+        return self._create_metric(node_name, cluster_name, status)
 
 
 class MetricStorage:
@@ -267,6 +176,100 @@ class MetricStorage:
 
         return metrics
 
+    def get_health_timeline(self, cluster_name: str, node_name: str,
+                            start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        """
+        获取节点健康状态的时间序列，展示状态变化。
+        
+        Args:
+            cluster_name: 集群名称
+            node_name: 节点名称
+            start_time: 开始时间
+            end_time: 结束时间
+        
+        Returns:
+            时间序列列表，包含时间戳、状态值、以及状态变化标记
+        """
+        metrics = self.query(cluster_name, node_name, start_time, end_time, "clickhouse_status")
+        
+        timeline = []
+        prev_status = None
+        
+        for m in metrics:
+            status = m['value']
+            changed = prev_status is not None and status != prev_status
+            
+            timeline.append({
+                'timestamp': m['timestamp'],
+                'status': status,
+                'status_text': '健康' if status == 1 else '离线',
+                'changed': changed,
+                'change_type': None if not changed else ('恢复' if status == 1 else '故障')
+            })
+            prev_status = status
+        
+        return timeline
+
+    def get_health_summary(self, cluster_name: str, node_name: str,
+                           start_time: datetime, end_time: datetime) -> Dict[str, Any]:
+        """
+        获取节点健康状态摘要，包括在线/离线时间段统计。
+        
+        Returns:
+            包含健康状态统计的字典
+        """
+        timeline = self.get_health_timeline(cluster_name, node_name, start_time, end_time)
+        
+        if not timeline:
+            return {
+                'node_name': node_name,
+                'cluster_name': cluster_name,
+                'total_checks': 0,
+                'healthy_count': 0,
+                'unhealthy_count': 0,
+                'availability_percent': 0,
+                'status_changes': [],
+                'current_status': None
+            }
+        
+        healthy_count = sum(1 for t in timeline if t['status'] == 1)
+        unhealthy_count = len(timeline) - healthy_count
+        
+        # 记录状态变化点
+        status_changes = [t for t in timeline if t['changed']]
+        
+        return {
+            'node_name': node_name,
+            'cluster_name': cluster_name,
+            'total_checks': len(timeline),
+            'healthy_count': healthy_count,
+            'unhealthy_count': unhealthy_count,
+            'availability_percent': round(healthy_count / len(timeline) * 100, 2) if timeline else 0,
+            'status_changes': status_changes,
+            'current_status': timeline[-1]['status_text'] if timeline else None,
+            'first_check': timeline[0]['timestamp'] if timeline else None,
+            'last_check': timeline[-1]['timestamp'] if timeline else None
+        }
+
+    def list_clusters(self) -> List[str]:
+        """列出所有集群名称。"""
+        clusters = []
+        if os.path.exists(self.base_dir):
+            for name in os.listdir(self.base_dir):
+                if os.path.isdir(os.path.join(self.base_dir, name)):
+                    clusters.append(name)
+        return clusters
+
+    def list_nodes(self, cluster_name: str) -> List[str]:
+        """列出集群中所有节点。"""
+        nodes = []
+        cluster_dir = os.path.join(self.base_dir, cluster_name)
+        if os.path.exists(cluster_dir):
+            for name in os.listdir(cluster_dir):
+                if os.path.isdir(os.path.join(cluster_dir, name)):
+                    nodes.append(name)
+        return nodes
+
 
 class MetricRegistry:
     """Registry for managing metric collectors."""
@@ -304,20 +307,17 @@ class MetricRegistry:
         return metrics
 
 
-def create_default_registry() -> MetricRegistry:
-    """Create a registry with default metric collectors."""
+def create_default_registry(host: str = "localhost", port: int = 8123) -> MetricRegistry:
+    """
+    Create a registry with ClickHouse ping collector.
+    
+    Args:
+        host: ClickHouse server hostname
+        port: ClickHouse HTTP port (default 8123)
+    
+    Collectors:
+        - clickhouse_status: Ping检测 (1=健康, 0=离线)
+    """
     registry = MetricRegistry()
-
-    # Register default collectors
-    registry.register(CPUPercentCollector())
-    registry.register(MemoryPercentCollector())
-    registry.register(MemoryUsedCollector())
-    registry.register(DiskPercentCollector(path="C:\\" if os.name == 'nt' else "/"))
-    registry.register(DiskUsedCollector(path="C:\\" if os.name == 'nt' else "/"))
-    registry.register(NetworkBytesRecvCollector())
-    registry.register(NetworkBytesSentCollector())
-    registry.register(NodeStatusCollector())
-    registry.register(LoadAverageCollector())
-    registry.register(ProcessCountCollector())
-
+    registry.register(ClickHouseStatusCollector(host=host, port=port))
     return registry
