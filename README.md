@@ -379,6 +379,118 @@ Trigger: Daily, repeat every 1 minute
 | load_average | - | System load average |
 | process_count | - | Number of running processes |
 
+---
+
+## Building Standalone Executable
+
+You can package the Health Monitor Dashboard into a standalone executable that can run without Python installed.
+
+### Prerequisites
+
+Install PyInstaller:
+```bash
+pip install pyinstaller
+```
+
+### Build Commands
+
+**Build single executable (recommended):**
+```bash
+python build_dashboard.py
+```
+
+**Build with directory structure:**
+```bash
+python build_dashboard.py --onedir
+```
+
+**Clean previous build and rebuild:**
+```bash
+python build_dashboard.py --clean
+```
+
+**Clean only (no build):**
+```bash
+python build_dashboard.py --clean-only
+```
+
+### Build Output
+
+After building, you will find:
+- `dist/HealthMonitorDashboard.exe` - The standalone executable
+- `dist/run_dashboard.bat` - Batch script for easy launching
+
+### Running the Executable
+
+**Basic usage:**
+```bash
+HealthMonitorDashboard.exe -m <metrics_directory>
+```
+
+**Examples:**
+```bash
+# Use default metrics directory
+HealthMonitorDashboard.exe -m D:\metrics
+
+# Specify custom port
+HealthMonitorDashboard.exe -m D:\ServiceHealthMatrixLogs -p 8080
+
+# Bind to all network interfaces
+HealthMonitorDashboard.exe -m D:\metrics --host 0.0.0.0 -p 5000
+```
+
+**Using the batch script:**
+```bash
+# Edit run_dashboard.bat to set your default METRICS_DIR, then:
+run_dashboard.bat
+
+# Or pass metrics directory as argument:
+run_dashboard.bat D:\MyMetrics
+```
+
+### Command Line Options
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--metrics-dir` | `-m` | Directory containing JSON metric logs | `D:\metrics` |
+| `--host` | | Host address to bind | `127.0.0.1` |
+| `--port` | `-p` | Port number | `5000` |
+| `--debug` | | Enable debug mode | Off |
+
+### Deployment
+
+1. Copy `HealthMonitorDashboard.exe` to target machine
+2. Ensure the metrics directory exists and contains JSON log files
+3. Run the executable with appropriate arguments
+4. Open browser to `http://localhost:5000`
+
+**Metrics Directory Structure:**
+```
+D:\metrics\
+├── ClusterName1\
+│   └── 2026\
+│       └── 02\
+│           └── 04\
+│               └── ServiceLogs_20260204_120000.json
+├── ClusterName2\
+│   └── ...
+```
+
+**JSON Log Format:**
+```json
+[
+  {
+    "clustername": "MyCluster",
+    "machinename": "Node01",
+    "metricname": "node_status",
+    "metricvalue": 1,
+    "logtime": "2026-02-04T12:00:00"
+  }
+]
+```
+
+---
+
 ## License
 
 MIT License
