@@ -263,11 +263,30 @@ Each file contains an array of metric records:
 ]
 ```
 
-## Standalone Metric Collector
+## Standalone Metric Collector (collector_cli)
 
 The project includes a standalone metric collector (`collector_cli.py`) that can be compiled into an executable and run independently via cron jobs or Windows Task Scheduler.
 
+### Features
+
+- Supports multiple cluster info providers (PowerShell with dmclient.exe, file-based YAML)
+- Collects metrics for all hosts in the specified cluster
+- Incrementally stores metrics to JSON files organized by cluster/node/date/hour
+- Can output to stdout for debugging or piping to other tools
+
 ### Building the Executable
+
+```powershell
+# Using PyInstaller
+pip install pyinstaller
+python -m PyInstaller --onefile collector_cli.py
+
+# The executable will be created at:
+# Windows: dist\collector_cli.exe
+# Linux/macOS: dist/collector_cli
+```
+
+Or use the provided build scripts:
 
 **Windows (PowerShell):**
 ```powershell
@@ -280,45 +299,68 @@ chmod +x build_collector.sh
 ./build_collector.sh
 ```
 
-The executable will be created at `dist/health_collector` (or `dist\health_collector.exe` on Windows).
-
 ### Collector CLI Usage
 
 ```bash
-# Collect metrics for a specific node
-./health_collector --cluster production --node server-01
+# Collect metrics using PowerShell provider (dmclient.exe)
+collector_cli.exe --cluster MTTitanMetricsBE-Prod-MWHE01 --provider powershell
 
-# Collect metrics for all nodes in clusters config
-./health_collector --all --clusters-config config/clusters.yaml
+# Collect metrics using file-based cluster config
+collector_cli.exe --cluster my-cluster --provider file --config config/clusters.yaml
 
-# Output to stdout instead of storing to file
-./health_collector --cluster production --node server-01 --stdout
+# Specify custom dmclient path and machine function
+collector_cli.exe --cluster MTTitanMetricsBE-Prod-MWHE01 --provider powershell \
+    --dmclient-path "C:\tools\dmclient.exe" --machine-function CH
 
-# Use custom storage directory
-./health_collector --cluster production --node server-01 --output-dir /var/lib/metrics
+# Output to stdout instead of log files
+collector_cli.exe --cluster my-cluster --provider file --stdout
+
+# Use custom output directory
+collector_cli.exe --cluster my-cluster --provider powershell --output-dir /var/log/metrics
 
 # Collect specific metrics only
-./health_collector --cluster production --node server-01 --metrics cpu_percent,memory_percent
+collector_cli.exe --cluster my-cluster --provider file --metrics cpu_percent,memory_percent
 
 # Verbose output
-./health_collector --cluster production --node server-01 --verbose
+collector_cli.exe --cluster my-cluster --provider file --verbose
 ```
+
+### Command Line Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--cluster` | `-c` | (required) | Cluster name to collect metrics for |
+| `--provider` | `-p` | `powershell` | Provider type: `powershell` or `file` |
+| `--config` | | `config/clusters.yaml` | Path to clusters config file (for file provider) |
+| `--dmclient-path` | | `.\dmclient.exe` | Path to dmclient.exe (for powershell provider) |
+| `--machine-function` | | `CH` | Machine function filter (for powershell provider) |
+| `--output-dir` | `-o` | `data/metrics` | Output directory for metric log files |
+| `--stdout` | | | Output metrics to stdout as JSON |
+| `--metrics` | `-m` | all | Comma-separated list of metrics to collect |
+| `--verbose` | `-v` | | Enable verbose output |
+
+### Provider Types
+
+| Provider | Description |
+|----------|-------------|
+| `powershell` | Uses dmclient.exe to get cluster info (parses CSV output). Region is auto-extracted from cluster name suffix. |
+| `file` | Reads cluster info from YAML/JSON configuration file |
 
 ### Cron Job Examples
 
 **Linux crontab:**
 ```bash
 # Collect every minute
-* * * * * /opt/healthmonitor/health_collector -c production -n server-01 -o /var/lib/metrics
+* * * * * /opt/healthmonitor/collector_cli -c my-cluster -p file --config /etc/healthmonitor/clusters.yaml -o /var/lib/metrics
 
-# Collect every 5 minutes for all nodes
-*/5 * * * * /opt/healthmonitor/health_collector --all --clusters-config /etc/healthmonitor/clusters.yaml -o /var/lib/metrics
+# Collect every 5 minutes
+*/5 * * * * /opt/healthmonitor/collector_cli -c production-cluster -p file --config /etc/healthmonitor/clusters.yaml
 ```
 
 **Windows Task Scheduler:**
 ```
-Program: C:\HealthMonitor\dist\health_collector.exe
-Arguments: --cluster production --node server-01 --output-dir C:\HealthMonitor\data\metrics
+Program: C:\HealthMonitor\dist\collector_cli.exe
+Arguments: --cluster my-cluster --provider file --config C:\HealthMonitor\config\clusters.yaml --output-dir C:\HealthMonitor\data\metrics
 Trigger: Daily, repeat every 1 minute
 ```
 

@@ -93,45 +93,316 @@ class ClickHouseStatusCollector(MetricCollector):
         return self._create_metric(node_name, cluster_name, status)
 
 
+def get_all_collectors(host: str = "localhost", port: int = 8123) -> List[MetricCollector]:
+    """
+    Get all available metric collectors.
+    
+    Args:
+        host: ClickHouse host address
+        port: ClickHouse HTTP port
+    
+    Returns:
+        List of metric collectors (currently only ClickHouseStatusCollector)
+    """
+    return [
+        ClickHouseStatusCollector(host=host, port=port),
+    ]
+
+
+# =============================================================================
+# DEPRECATED: Local System Metric Collectors (using psutil)
+# These collectors are deprecated and will be removed in a future version.
+# Use ClickHouseStatusCollector for monitoring ClickHouse health.
+# =============================================================================
+
+import warnings
+
+# Try to import psutil, handle if not available
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
+
+def _deprecated_warning(class_name: str):
+    """Emit deprecation warning for old collectors."""
+    warnings.warn(
+        f"{class_name} is deprecated and will be removed in a future version. "
+        "Use ClickHouseStatusCollector instead.",
+        DeprecationWarning,
+        stacklevel=3
+    )
+
+
+class CPUPercentCollector(MetricCollector):
+    """
+    DEPRECATED: Collects CPU usage percentage.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, interval: int = 60):
+        _deprecated_warning("CPUPercentCollector")
+        super().__init__(name="cpu_percent", unit="%", interval=interval)
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            value = psutil.cpu_percent(interval=1)
+        else:
+            value = 0.0
+        return self._create_metric(node_name, cluster_name, value)
+
+
+class MemoryPercentCollector(MetricCollector):
+    """
+    DEPRECATED: Collects memory usage percentage.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, interval: int = 60):
+        _deprecated_warning("MemoryPercentCollector")
+        super().__init__(name="memory_percent", unit="%", interval=interval)
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            value = psutil.virtual_memory().percent
+        else:
+            value = 0.0
+        return self._create_metric(node_name, cluster_name, value)
+
+
+class MemoryUsedCollector(MetricCollector):
+    """
+    DEPRECATED: Collects memory used in bytes.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, interval: int = 60):
+        _deprecated_warning("MemoryUsedCollector")
+        super().__init__(name="memory_used", unit="bytes", interval=interval)
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            value = psutil.virtual_memory().used
+        else:
+            value = 0
+        return self._create_metric(node_name, cluster_name, value)
+
+
+class DiskPercentCollector(MetricCollector):
+    """
+    DEPRECATED: Collects disk usage percentage.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, path: str = None, interval: int = 60):
+        _deprecated_warning("DiskPercentCollector")
+        super().__init__(name="disk_percent", unit="%", interval=interval)
+        self.path = path or ("C:\\" if os.name == 'nt' else "/")
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            try:
+                value = psutil.disk_usage(self.path).percent
+            except Exception:
+                value = 0.0
+        else:
+            value = 0.0
+        return self._create_metric(node_name, cluster_name, value)
+
+
+class DiskUsedCollector(MetricCollector):
+    """
+    DEPRECATED: Collects disk used in bytes.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, path: str = None, interval: int = 60):
+        _deprecated_warning("DiskUsedCollector")
+        super().__init__(name="disk_used", unit="bytes", interval=interval)
+        self.path = path or ("C:\\" if os.name == 'nt' else "/")
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            try:
+                value = psutil.disk_usage(self.path).used
+            except Exception:
+                value = 0
+        else:
+            value = 0
+        return self._create_metric(node_name, cluster_name, value)
+
+
+class NetworkBytesRecvCollector(MetricCollector):
+    """
+    DEPRECATED: Collects network bytes received.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, interval: int = 60):
+        _deprecated_warning("NetworkBytesRecvCollector")
+        super().__init__(name="network_bytes_recv", unit="bytes", interval=interval)
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            value = psutil.net_io_counters().bytes_recv
+        else:
+            value = 0
+        return self._create_metric(node_name, cluster_name, value)
+
+
+class NetworkBytesSentCollector(MetricCollector):
+    """
+    DEPRECATED: Collects network bytes sent.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, interval: int = 60):
+        _deprecated_warning("NetworkBytesSentCollector")
+        super().__init__(name="network_bytes_sent", unit="bytes", interval=interval)
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            value = psutil.net_io_counters().bytes_sent
+        else:
+            value = 0
+        return self._create_metric(node_name, cluster_name, value)
+
+
+class NodeStatusCollector(MetricCollector):
+    """
+    DEPRECATED: Collects node status (1 = up, 0 = down).
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, interval: int = 60):
+        _deprecated_warning("NodeStatusCollector")
+        super().__init__(name="node_status", unit="", interval=interval)
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        # Node is up if this collector runs successfully
+        return self._create_metric(node_name, cluster_name, 1)
+
+
+class LoadAverageCollector(MetricCollector):
+    """
+    DEPRECATED: Collects system load average.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, interval: int = 60):
+        _deprecated_warning("LoadAverageCollector")
+        super().__init__(name="load_average", unit="", interval=interval)
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            try:
+                value = psutil.getloadavg()[0]
+            except (AttributeError, OSError):
+                # getloadavg not available on Windows
+                value = psutil.cpu_percent() / 100.0 * psutil.cpu_count()
+        else:
+            value = 0.0
+        return self._create_metric(node_name, cluster_name, value)
+
+
+class ProcessCountCollector(MetricCollector):
+    """
+    DEPRECATED: Collects number of running processes.
+    This collector is deprecated. Use ClickHouseStatusCollector instead.
+    """
+
+    def __init__(self, interval: int = 60):
+        _deprecated_warning("ProcessCountCollector")
+        super().__init__(name="process_count", unit="", interval=interval)
+
+    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        if PSUTIL_AVAILABLE:
+            value = len(psutil.pids())
+        else:
+            value = 0
+        return self._create_metric(node_name, cluster_name, value)
+
+
 class MetricStorage:
-    """Handles storage of metrics to JSON files organized by hour."""
+    """Handles storage of metrics to CSV-style log files organized by directory hierarchy."""
+
+    # CSV header format - only 3 columns: metric_name, timestamp, value
+    CSV_HEADER = "# metric_name,timestamp,value"
 
     def __init__(self, base_dir: str = "data/metrics"):
         self.base_dir = base_dir
         self._lock = threading.Lock()
         os.makedirs(base_dir, exist_ok=True)
 
-    def _get_file_path(self, cluster_name: str, node_name: str, timestamp: datetime) -> str:
-        """Generate file path based on cluster, node, and hour."""
+    def _get_file_path(self, metric: MetricValue, timestamp: datetime) -> str:
+        """
+        Generate file path with all context in directory structure.
+        Format: base_dir/cluster_name/node_name/YYYY/MM/DD/HH.log
+        """
         date_dir = timestamp.strftime("%Y/%m/%d")
-        hour_file = timestamp.strftime("%H") + ".json"
-        dir_path = os.path.join(self.base_dir, cluster_name, node_name, date_dir)
+        hour_file = timestamp.strftime("%H") + ".log"
+        dir_path = os.path.join(
+            self.base_dir, 
+            metric.cluster_name, 
+            metric.node_name, 
+            date_dir
+        )
         os.makedirs(dir_path, exist_ok=True)
         return os.path.join(dir_path, hour_file)
 
+    def _metric_to_csv_line(self, metric: MetricValue) -> str:
+        """Convert a metric to CSV line format (only 3 columns)."""
+        return f"{metric.metric_name},{metric.timestamp},{metric.value}"
+
+    def _csv_line_to_metric(self, line: str, cluster_name: str, node_name: str) -> Optional[Dict[str, Any]]:
+        """Parse a CSV line back to metric dict, with context from directory path."""
+        line = line.strip()
+        if not line or line.startswith('#'):
+            return None
+        
+        parts = line.split(',', 2)  # Split into at most 3 parts
+        if len(parts) < 3:
+            return None
+        
+        try:
+            value_str = parts[2]
+            value = float(value_str) if '.' in value_str else int(value_str)
+            
+            return {
+                'metric_name': parts[0],
+                'timestamp': parts[1],
+                'value': value,
+                'node_name': node_name,
+                'cluster_name': cluster_name,
+            }
+        except (ValueError, IndexError):
+            return None
+
     def store(self, metric: MetricValue) -> None:
-        """Store a single metric value."""
+        """Store a single metric value (append to log file)."""
         timestamp = datetime.fromisoformat(metric.timestamp)
-        file_path = self._get_file_path(metric.cluster_name, metric.node_name, timestamp)
+        file_path = self._get_file_path(metric, timestamp)
 
         with self._lock:
-            metrics = []
-            if os.path.exists(file_path):
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        metrics = json.load(f)
-                except (json.JSONDecodeError, IOError):
-                    metrics = []
-
-            metrics.append(metric.to_dict())
-
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(metrics, f, indent=2)
+            # Check if file exists and has header
+            file_exists = os.path.exists(file_path)
+            
+            with open(file_path, 'a', encoding='utf-8') as f:
+                if not file_exists:
+                    f.write(self.CSV_HEADER + '\n')
+                f.write(self._metric_to_csv_line(metric) + '\n')
 
     def store_batch(self, metrics: List[MetricValue]) -> None:
         """Store multiple metrics efficiently."""
         for metric in metrics:
             self.store(metric)
+
+    def _get_query_file_path(self, cluster_name: str, node_name: str, timestamp: datetime) -> str:
+        """Generate file path for querying based on cluster, node, and hour."""
+        date_dir = timestamp.strftime("%Y/%m/%d")
+        hour_file = timestamp.strftime("%H") + ".log"
+        return os.path.join(self.base_dir, cluster_name, node_name, date_dir, hour_file)
 
     def query(self, cluster_name: str, node_name: str,
               start_time: datetime, end_time: datetime,
@@ -141,17 +412,19 @@ class MetricStorage:
         current = start_time.replace(minute=0, second=0, microsecond=0)
 
         while current <= end_time:
-            file_path = self._get_file_path(cluster_name, node_name, current)
+            file_path = self._get_query_file_path(cluster_name, node_name, current)
             if os.path.exists(file_path):
                 try:
                     with open(file_path, 'r', encoding='utf-8') as f:
-                        metrics = json.load(f)
-                        for m in metrics:
+                        for line in f:
+                            m = self._csv_line_to_metric(line, cluster_name, node_name)
+                            if m is None:
+                                continue
                             m_time = datetime.fromisoformat(m['timestamp'])
                             if start_time <= m_time <= end_time:
                                 if metric_name is None or m['metric_name'] == metric_name:
                                     results.append(m)
-                except (json.JSONDecodeError, IOError):
+                except IOError:
                     pass
 
             # Move to next hour

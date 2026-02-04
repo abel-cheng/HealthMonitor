@@ -140,24 +140,41 @@ class PowerShellClusterProvider(ClusterInfoProvider):
     COL_STATUS = 10
     COL_ENVIRONMENT = 17
 
-    def __init__(self, region: str, cluster_name: str,
-                 dmclient_path: str = ".\\dmclient.exe",
+    def __init__(self, cluster_name: str,
+                 dmclient_path: str = "D:\\app\\APTools.ap_2026_01_25_25001\\",
                  machine_function: str = "CH"):
         """
         Initialize PowerShellClusterProvider.
 
         Args:
-            region: The region code (e.g., "MWHE01")
             cluster_name: The cluster name (e.g., "MTTitanMetricsBE-Prod-MWHE01")
-            dmclient_path: Path to dmclient.exe
+                          Region is automatically extracted from the last suffix.
+            dmclient_path: Directory path containing dmclient.exe and environment files
+                          (e.g., "D:\\app\\APTools.ap_2026_01_25_25001\\")
             machine_function: Machine function filter (e.g., "CH")
         """
-        self.region = region
         self.cluster_name = cluster_name
+        self.region = self._extract_region(cluster_name)
         self.dmclient_path = dmclient_path
         self.machine_function = machine_function
         self._clusters: List[Cluster] = []
         self.refresh()
+
+    @staticmethod
+    def _extract_region(cluster_name: str) -> str:
+        """
+        Extract region from cluster name suffix.
+
+        Args:
+            cluster_name: The cluster name (e.g., "MTTitanMetricsBE-Prod-MWHE01")
+
+        Returns:
+            The region code (e.g., "MWHE01")
+        """
+        if not cluster_name:
+            return ""
+        parts = cluster_name.split('-')
+        return parts[-1] if parts else ""
 
     def get_clusters(self) -> List[Cluster]:
         return self._clusters
@@ -170,27 +187,56 @@ class PowerShellClusterProvider(ClusterInfoProvider):
 
     def refresh(self) -> None:
         self._clusters = []
+        
+        # Build command - first cd to dmclient directory, then execute dmclient.exe
+        # This is needed because dmclient.exe requires environment files in the same directory
+        dm_command = f'GetMachineInfo -f {self.machine_function} -w {self.cluster_name}'
+        full_command = f"cd '{self.dmclient_path}'; .\\dmclient.exe -C {self.region} -c \"{dm_command}\""
+        powershell_args = ['powershell', '-Command', full_command]
+        
+        print(f"[PowerShellClusterProvider] Executing command:")
+        print(f"  powershell -Command {full_command}")
+        
         try:
-            # Execute dmclient.exe command via PowerShell
-            # Command: .\dmclient.exe -C <region> -c "GetMachineInfo -f <function> -w <cluster_name>"
-            dm_command = f'GetMachineInfo -f {self.machine_function} -w {self.cluster_name}'
             result = subprocess.run(
-                ['powershell', '-Command',
-                 f'{self.dmclient_path} -C {self.region} -c "{dm_command}"'],
+                powershell_args,
                 capture_output=True,
                 text=True,
                 timeout=120
             )
 
+            print(f"[PowerShellClusterProvider] Return code: {result.returncode}")
+            
+            if result.stderr:
+                print(f"[PowerShellClusterProvider] STDERR: {result.stderr[:500]}")
+            
             if result.returncode == 0 and result.stdout:
+                print(f"[PowerShellClusterProvider] STDOUT ({len(result.stdout)} chars):")
+                # Print first few lines for debugging
+                lines = result.stdout.strip().split('\n')
+                for i, line in enumerate(lines[:5]):
+                    print(f"  {line[:200]}")
+                if len(lines) > 5:
+                    print(f"  ... ({len(lines) - 5} more lines)")
+                
                 self._parse_csv_output(result.stdout)
+                print(f"[PowerShellClusterProvider] Parsed {len(self._clusters)} cluster(s)")
+                if self._clusters:
+                    for cluster in self._clusters:
+                        print(f"  Cluster '{cluster.name}': {len(cluster.nodes)} node(s)")
+            else:
+                print(f"[PowerShellClusterProvider] No output or command failed")
+                if result.stdout:
+                    print(f"[PowerShellClusterProvider] STDOUT: {result.stdout[:200]}")
 
-        except subprocess.TimeoutExpired:
-            # Timeout - leave clusters empty
-            pass
-        except Exception:
-            # Other errors - leave clusters empty
-            pass
+        except subprocess.TimeoutExpired as e:
+            print(f"[PowerShellClusterProvider] ERROR: Command timed out after 120 seconds")
+            print(f"  Exception: {e}")
+        except FileNotFoundError as e:
+            print(f"[PowerShellClusterProvider] ERROR: Command not found")
+            print(f"  Exception: {e}")
+        except Exception as e:
+            print(f"[PowerShellClusterProvider] ERROR: {type(e).__name__}: {e}")
 
     def _parse_csv_output(self, csv_content: str) -> None:
         """Parse CSV output from dmclient.exe and extract node information."""
@@ -267,9 +313,8 @@ class ClusterProviderFactory:
             return DatabaseClusterProvider(config.get('connection_string', ''))
         elif provider_type == 'powershell':
             return PowerShellClusterProvider(
-                region=config.get('region', ''),
                 cluster_name=config.get('cluster_name', ''),
-                dmclient_path=config.get('dmclient_path', '.\\dmclient.exe'),
+                dmclient_path=config.get('dmclient_path', 'D:\\app\\APTools.ap_2026_01_25_25001\\'),
                 machine_function=config.get('machine_function', 'CH')
             )
         else:

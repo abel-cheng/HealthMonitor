@@ -160,3 +160,15 @@ PENDING_NODE,POD1,CH,0,Image,SKU,10.0.0.2,100,CH,100,P,None,0,0,1900-01-01,,,Clu
         assert target_node.host == "10.213.196.158"
         assert target_node.attributes["status"] == "H"
         assert target_node.attributes["environment"] == "MTTitanMetricsBE-Prod-MWHE01"
+
+    def test_extract_region_from_cluster_name(self):
+        """Test that region is correctly extracted from cluster name."""
+        # Test normal cluster names
+        assert PowerShellClusterProvider._extract_region("MTTitanMetricsBE-Prod-MWHE01") == "MWHE01"
+        assert PowerShellClusterProvider._extract_region("MyCluster-Dev-USWEST2") == "USWEST2"
+        assert PowerShellClusterProvider._extract_region("Simple-Region") == "Region"
+
+        # Test edge cases
+        assert PowerShellClusterProvider._extract_region("SingleName") == "SingleName"
+        assert PowerShellClusterProvider._extract_region("") == ""
+        assert PowerShellClusterProvider._extract_region("A-B-C-D") == "D"

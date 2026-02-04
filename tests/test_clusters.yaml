@@ -1,0 +1,11 @@
+clusters:
+  - name: test-cluster
+    description: Test cluster for unit testing
+    nodes:
+      - name: test-node-01
+        type: worker
+        host: 13.66.204.72
+        collection_method: remote
+        attributes:
+          environment: test
+          status: H
