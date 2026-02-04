@@ -59,43 +59,6 @@ class MetricCollector(ABC):
         )
 
 
-class ClickHouseUptimeCollector(MetricCollector):
-    """
-    Collects ClickHouse server uptime in seconds via HTTP API.
-    
-    Uses: SELECT uptime() query through ClickHouse HTTP interface.
-    Equivalent curl: curl 'http://host:8123/?query=SELECT%20uptime()'
-    """
-
-    def __init__(self, host: str = "localhost", port: int = 8123, 
-                 user: str = "default", password: str = "",
-                 interval: int = 60, timeout: int = 10):
-        super().__init__(name="clickhouse_uptime", unit="seconds", interval=interval)
-        self.host = host
-        self.port = port
-        self.user = user
-        self.password = password
-        self.timeout = timeout
-
-    def _get_base_url(self) -> str:
-        return f"http://{self.host}:{self.port}"
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        """
-        Collect ClickHouse uptime via HTTP query.
-        Returns uptime in seconds, or -1 if unreachable.
-        """
-        try:
-            url = f"{self._get_base_url()}/?query=SELECT%20uptime()"
-            auth = (self.user, self.password) if self.password else None
-            response = requests.get(url, auth=auth, timeout=self.timeout)
-            response.raise_for_status()
-            uptime = int(response.text.strip())
-        except Exception:
-            uptime = -1
-        return self._create_metric(node_name, cluster_name, uptime)
-
-
 class ClickHouseStatusCollector(MetricCollector):
     """
     Collects ClickHouse server health status via HTTP ping endpoint.
@@ -107,13 +70,10 @@ class ClickHouseStatusCollector(MetricCollector):
     """
 
     def __init__(self, host: str = "localhost", port: int = 8123,
-                 user: str = "default", password: str = "",
                  interval: int = 60, timeout: int = 10):
         super().__init__(name="clickhouse_status", unit="", interval=interval)
         self.host = host
         self.port = port
-        self.user = user
-        self.password = password
         self.timeout = timeout
 
     def _get_base_url(self) -> str:
@@ -126,8 +86,7 @@ class ClickHouseStatusCollector(MetricCollector):
         """
         try:
             url = f"{self._get_base_url()}/ping"
-            auth = (self.user, self.password) if self.password else None
-            response = requests.get(url, auth=auth, timeout=self.timeout)
+            response = requests.get(url, timeout=self.timeout)
             status = 1 if response.status_code == 200 and response.text.strip() == "Ok." else 0
         except Exception:
             status = 0
@@ -217,6 +176,100 @@ class MetricStorage:
 
         return metrics
 
+    def get_health_timeline(self, cluster_name: str, node_name: str,
+                            start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        """
+        获取节点健康状态的时间序列，展示状态变化。
+        
+        Args:
+            cluster_name: 集群名称
+            node_name: 节点名称
+            start_time: 开始时间
+            end_time: 结束时间
+        
+        Returns:
+            时间序列列表，包含时间戳、状态值、以及状态变化标记
+        """
+        metrics = self.query(cluster_name, node_name, start_time, end_time, "clickhouse_status")
+        
+        timeline = []
+        prev_status = None
+        
+        for m in metrics:
+            status = m['value']
+            changed = prev_status is not None and status != prev_status
+            
+            timeline.append({
+                'timestamp': m['timestamp'],
+                'status': status,
+                'status_text': '健康' if status == 1 else '离线',
+                'changed': changed,
+                'change_type': None if not changed else ('恢复' if status == 1 else '故障')
+            })
+            prev_status = status
+        
+        return timeline
+
+    def get_health_summary(self, cluster_name: str, node_name: str,
+                           start_time: datetime, end_time: datetime) -> Dict[str, Any]:
+        """
+        获取节点健康状态摘要，包括在线/离线时间段统计。
+        
+        Returns:
+            包含健康状态统计的字典
+        """
+        timeline = self.get_health_timeline(cluster_name, node_name, start_time, end_time)
+        
+        if not timeline:
+            return {
+                'node_name': node_name,
+                'cluster_name': cluster_name,
+                'total_checks': 0,
+                'healthy_count': 0,
+                'unhealthy_count': 0,
+                'availability_percent': 0,
+                'status_changes': [],
+                'current_status': None
+            }
+        
+        healthy_count = sum(1 for t in timeline if t['status'] == 1)
+        unhealthy_count = len(timeline) - healthy_count
+        
+        # 记录状态变化点
+        status_changes = [t for t in timeline if t['changed']]
+        
+        return {
+            'node_name': node_name,
+            'cluster_name': cluster_name,
+            'total_checks': len(timeline),
+            'healthy_count': healthy_count,
+            'unhealthy_count': unhealthy_count,
+            'availability_percent': round(healthy_count / len(timeline) * 100, 2) if timeline else 0,
+            'status_changes': status_changes,
+            'current_status': timeline[-1]['status_text'] if timeline else None,
+            'first_check': timeline[0]['timestamp'] if timeline else None,
+            'last_check': timeline[-1]['timestamp'] if timeline else None
+        }
+
+    def list_clusters(self) -> List[str]:
+        """列出所有集群名称。"""
+        clusters = []
+        if os.path.exists(self.base_dir):
+            for name in os.listdir(self.base_dir):
+                if os.path.isdir(os.path.join(self.base_dir, name)):
+                    clusters.append(name)
+        return clusters
+
+    def list_nodes(self, cluster_name: str) -> List[str]:
+        """列出集群中所有节点。"""
+        nodes = []
+        cluster_dir = os.path.join(self.base_dir, cluster_name)
+        if os.path.exists(cluster_dir):
+            for name in os.listdir(cluster_dir):
+                if os.path.isdir(os.path.join(cluster_dir, name)):
+                    nodes.append(name)
+        return nodes
+
 
 class MetricRegistry:
     """Registry for managing metric collectors."""
@@ -254,29 +307,17 @@ class MetricRegistry:
         return metrics
 
 
-def create_default_registry(host: str = "localhost", port: int = 8123,
-                            user: str = "admin", password: str = "") -> MetricRegistry:
+def create_default_registry(host: str = "localhost", port: int = 8123) -> MetricRegistry:
     """
-    Create a registry with ClickHouse metric collectors.
+    Create a registry with ClickHouse ping collector.
     
     Args:
         host: ClickHouse server hostname
         port: ClickHouse HTTP port (default 8123)
-        user: ClickHouse username (default: admin)
-        password: ClickHouse password
     
     Collectors:
-        - clickhouse_status: Returns: 1 = healthy, 0 = unhealthy/unreachable
-        - clickhouse_uptime: Returns node uptime in seconds
-    
-    Example curl commands:
-        curl -u 'admin:password' http://host:8123/ping
-        curl -u 'admin:password' 'http://host:8123/?query=SELECT%20uptime()%20FORMAT%20JSON'
+        - clickhouse_status: Ping检测 (1=健康, 0=离线)
     """
     registry = MetricRegistry()
-
-    # Register ClickHouse collectors: ping + uptime
-    registry.register(ClickHouseStatusCollector(host=host, port=port, user=user, password=password))
-    registry.register(ClickHouseUptimeCollector(host=host, port=port, user=user, password=password))
-
+    registry.register(ClickHouseStatusCollector(host=host, port=port))
     return registry
