@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional, Callable
 import json
 import os
 import uuid
-import psutil
+import requests
 import threading
 import time
 
@@ -59,129 +59,79 @@ class MetricCollector(ABC):
         )
 
 
-class CPUPercentCollector(MetricCollector):
-    """Collects CPU usage percentage."""
+class ClickHouseUptimeCollector(MetricCollector):
+    """
+    Collects ClickHouse server uptime in seconds via HTTP API.
+    
+    Uses: SELECT uptime() query through ClickHouse HTTP interface.
+    Equivalent curl: curl 'http://host:8123/?query=SELECT%20uptime()'
+    """
 
-    def __init__(self, interval: int = 60):
-        super().__init__(name="cpu_percent", unit="%", interval=interval)
+    def __init__(self, host: str = "localhost", port: int = 8123, 
+                 user: str = "default", password: str = "",
+                 interval: int = 60, timeout: int = 10):
+        super().__init__(name="clickhouse_uptime", unit="seconds", interval=interval)
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
+        self.timeout = timeout
 
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        value = psutil.cpu_percent(interval=1)
-        return self._create_metric(node_name, cluster_name, value)
-
-
-class MemoryPercentCollector(MetricCollector):
-    """Collects memory usage percentage."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="memory_percent", unit="%", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        memory = psutil.virtual_memory()
-        return self._create_metric(node_name, cluster_name, memory.percent)
-
-
-class MemoryUsedCollector(MetricCollector):
-    """Collects used memory in bytes."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="memory_used", unit="bytes", interval=interval)
+    def _get_base_url(self) -> str:
+        return f"http://{self.host}:{self.port}"
 
     def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        memory = psutil.virtual_memory()
-        return self._create_metric(node_name, cluster_name, memory.used)
-
-
-class DiskPercentCollector(MetricCollector):
-    """Collects disk usage percentage."""
-
-    def __init__(self, interval: int = 60, path: str = "/"):
-        super().__init__(name="disk_percent", unit="%", interval=interval)
-        self.path = path
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        """
+        Collect ClickHouse uptime via HTTP query.
+        Returns uptime in seconds, or -1 if unreachable.
+        """
         try:
-            disk = psutil.disk_usage(self.path)
-            value = disk.percent
+            url = f"{self._get_base_url()}/?query=SELECT%20uptime()"
+            auth = (self.user, self.password) if self.password else None
+            response = requests.get(url, auth=auth, timeout=self.timeout)
+            response.raise_for_status()
+            uptime = int(response.text.strip())
         except Exception:
-            value = 0
-        return self._create_metric(node_name, cluster_name, value)
+            uptime = -1
+        return self._create_metric(node_name, cluster_name, uptime)
 
 
-class DiskUsedCollector(MetricCollector):
-    """Collects used disk space in bytes."""
+class ClickHouseStatusCollector(MetricCollector):
+    """
+    Collects ClickHouse server health status via HTTP ping endpoint.
+    
+    Uses: /ping endpoint which returns 'Ok.' if server is healthy.
+    Equivalent curl: curl 'http://host:8123/ping'
+    
+    Returns: 1 = healthy, 0 = unhealthy/unreachable
+    """
 
-    def __init__(self, interval: int = 60, path: str = "/"):
-        super().__init__(name="disk_used", unit="bytes", interval=interval)
-        self.path = path
+    def __init__(self, host: str = "localhost", port: int = 8123,
+                 user: str = "default", password: str = "",
+                 interval: int = 60, timeout: int = 10):
+        super().__init__(name="clickhouse_status", unit="", interval=interval)
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
+        self.timeout = timeout
+
+    def _get_base_url(self) -> str:
+        return f"http://{self.host}:{self.port}"
 
     def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
+        """
+        Check ClickHouse health via /ping endpoint.
+        Returns 1 if healthy, 0 if unhealthy or unreachable.
+        """
         try:
-            disk = psutil.disk_usage(self.path)
-            value = disk.used
+            url = f"{self._get_base_url()}/ping"
+            auth = (self.user, self.password) if self.password else None
+            response = requests.get(url, auth=auth, timeout=self.timeout)
+            status = 1 if response.status_code == 200 and response.text.strip() == "Ok." else 0
         except Exception:
-            value = 0
-        return self._create_metric(node_name, cluster_name, value)
-
-
-class NetworkBytesRecvCollector(MetricCollector):
-    """Collects network bytes received."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="network_bytes_recv", unit="bytes", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        net_io = psutil.net_io_counters()
-        return self._create_metric(node_name, cluster_name, net_io.bytes_recv)
-
-
-class NetworkBytesSentCollector(MetricCollector):
-    """Collects network bytes sent."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="network_bytes_sent", unit="bytes", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        net_io = psutil.net_io_counters()
-        return self._create_metric(node_name, cluster_name, net_io.bytes_sent)
-
-
-class NodeStatusCollector(MetricCollector):
-    """Collects node availability status (1 = up, 0 = down)."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="node_status", unit="", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        # For local collection, node is always up
-        # Remote collection would implement actual health check
-        return self._create_metric(node_name, cluster_name, 1)
-
-
-class LoadAverageCollector(MetricCollector):
-    """Collects system load average (1 minute)."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="load_average", unit="", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        try:
-            load_avg = psutil.getloadavg()[0]
-        except (AttributeError, OSError):
-            # getloadavg not available on Windows
-            load_avg = psutil.cpu_percent() / 100.0 * psutil.cpu_count()
-        return self._create_metric(node_name, cluster_name, load_avg)
-
-
-class ProcessCountCollector(MetricCollector):
-    """Collects number of running processes."""
-
-    def __init__(self, interval: int = 60):
-        super().__init__(name="process_count", unit="", interval=interval)
-
-    def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
-        count = len(psutil.pids())
-        return self._create_metric(node_name, cluster_name, count)
+            status = 0
+        return self._create_metric(node_name, cluster_name, status)
 
 
 class MetricStorage:
@@ -304,20 +254,29 @@ class MetricRegistry:
         return metrics
 
 
-def create_default_registry() -> MetricRegistry:
-    """Create a registry with default metric collectors."""
+def create_default_registry(host: str = "localhost", port: int = 8123,
+                            user: str = "admin", password: str = "") -> MetricRegistry:
+    """
+    Create a registry with ClickHouse metric collectors.
+    
+    Args:
+        host: ClickHouse server hostname
+        port: ClickHouse HTTP port (default 8123)
+        user: ClickHouse username (default: admin)
+        password: ClickHouse password
+    
+    Collectors:
+        - clickhouse_status: Returns: 1 = healthy, 0 = unhealthy/unreachable
+        - clickhouse_uptime: Returns node uptime in seconds
+    
+    Example curl commands:
+        curl -u 'admin:password' http://host:8123/ping
+        curl -u 'admin:password' 'http://host:8123/?query=SELECT%20uptime()%20FORMAT%20JSON'
+    """
     registry = MetricRegistry()
 
-    # Register default collectors
-    registry.register(CPUPercentCollector())
-    registry.register(MemoryPercentCollector())
-    registry.register(MemoryUsedCollector())
-    registry.register(DiskPercentCollector(path="C:\\" if os.name == 'nt' else "/"))
-    registry.register(DiskUsedCollector(path="C:\\" if os.name == 'nt' else "/"))
-    registry.register(NetworkBytesRecvCollector())
-    registry.register(NetworkBytesSentCollector())
-    registry.register(NodeStatusCollector())
-    registry.register(LoadAverageCollector())
-    registry.register(ProcessCountCollector())
+    # Register ClickHouse collectors: ping + uptime
+    registry.register(ClickHouseStatusCollector(host=host, port=port, user=user, password=password))
+    registry.register(ClickHouseUptimeCollector(host=host, port=port, user=user, password=password))
 
     return registry
