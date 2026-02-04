@@ -1,0 +1,58 @@
+[
+  {
+    "clustername": "MTTitanMetricsBE-Prod-EAUS01",
+    "machinename": "EAUS01NODE001",
+    "metricname": "ch_ping",
+    "metricvalue": 1,
+    "logtime": "2026-02-04T12:00:01"
+  },
+  {
+    "clustername": "MTTitanMetricsBE-Prod-EAUS01",
+    "machinename": "EAUS01NODE002",
+    "metricname": "ch_ping",
+    "metricvalue": 0,
+    "logtime": "2026-02-04T12:00:02"
+  },
+  {
+    "clustername": "MTTitanMetricsBE-Prod-EAUS01",
+    "machinename": "EAUS01NODE003",
+    "metricname": "ch_ping",
+    "metricvalue": 1,
+    "logtime": "2026-02-04T12:00:03"
+  },
+  {
+    "clustername": "MTTitanMetricsBE-Prod-EAUS01",
+    "machinename": "EAUS01NODE004",
+    "metricname": "ch_ping",
+    "metricvalue": 0,
+    "logtime": "2026-02-04T12:00:04"
+  },
+  {
+    "clustername": "MTTitanMetricsBE-Prod-EAUS01",
+    "machinename": "EAUS01NODE005",
+    "metricname": "ch_ping",
+    "metricvalue": 1,
+    "logtime": "2026-02-04T12:00:05"
+  },
+  {
+    "clustername": "MTTitanMetricsBE-Prod-EAUS01",
+    "machinename": "EAUS01NODE006",
+    "metricname": "ch_ping",
+    "metricvalue": 1,
+    "logtime": "2026-02-04T12:00:06"
+  },
+  {
+    "clustername": "MTTitanMetricsBE-Prod-EAUS01",
+    "machinename": "EAUS01NODE007",
+    "metricname": "ch_ping",
+    "metricvalue": 1,
+    "logtime": "2026-02-04T12:00:07"
+  },
+  {
+    "clustername": "MTTitanMetricsBE-Prod-EAUS01",
+    "machinename": "EAUS01NODE008",
+    "metricname": "ch_ping",
+    "metricvalue": 1,
+    "logtime": "2026-02-04T12:00:08"
+  }
+]

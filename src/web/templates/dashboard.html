@@ -1,0 +1,243 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cluster Health Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #fbfbfd; --bg-secondary: #ffffff; --bg-tertiary: #f5f5f7;
+            --text-primary: #1d1d1f; --text-secondary: #86868b; --text-tertiary: #6e6e73;
+            --border-color: #d2d2d7; --accent-blue: #0071e3;
+            --status-green: #34c759; --status-yellow: #ff9f0a; --status-red: #ff3b30;
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.04); --shadow-md: 0 4px 20px rgba(0,0,0,0.08);
+            --shadow-lg: 0 12px 40px rgba(0,0,0,0.12);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-primary: #000; --bg-secondary: #1d1d1f; --bg-tertiary: #2d2d2d;
+                --text-primary: #f5f5f7; --text-secondary: #a1a1a6; --text-tertiary: #86868b;
+                --border-color: #424245;
+            }
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+        .nav { position: sticky; top: 0; z-index: 1000; background: rgba(251,251,253,0.8); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-color); }
+        @media (prefers-color-scheme: dark) { .nav { background: rgba(29,29,31,0.8); } }
+        .nav-content { max-width: 980px; margin: 0 auto; padding: 0 22px; height: 48px; display: flex; align-items: center; justify-content: space-between; }
+        .nav-title { font-size: 21px; font-weight: 600; }
+        .nav-time { font-size: 12px; color: var(--text-secondary); }
+        .hero { text-align: center; padding: 60px 22px 40px; max-width: 980px; margin: 0 auto; }
+        .hero h1 { font-size: 48px; font-weight: 600; margin-bottom: 12px; }
+        .hero p { font-size: 19px; color: var(--text-secondary); }
+        .container { max-width: 980px; margin: 0 auto; padding: 0 22px 80px; }
+        .breadcrumb { margin-bottom: 20px; font-size: 13px; color: var(--text-secondary); }
+        .breadcrumb a { color: var(--accent-blue); text-decoration: none; cursor: pointer; }
+        .breadcrumb a:hover { text-decoration: underline; }
+        .breadcrumb .sep { margin: 0 8px; }
+        .legend { display: flex; justify-content: center; gap: 28px; margin-bottom: 30px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-secondary); }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .legend-dot.green { background: var(--status-green); }
+        .legend-dot.yellow { background: var(--status-yellow); }
+        .legend-dot.red { background: var(--status-red); }
+        .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 40px; }
+        .summary-card { background: var(--bg-secondary); border-radius: 16px; padding: 24px; text-align: center; box-shadow: var(--shadow-sm); }
+        .summary-value { font-size: 40px; font-weight: 600; }
+        .summary-value.total { color: var(--text-primary); }
+        .summary-value.healthy { color: var(--status-green); }
+        .summary-value.down { color: var(--status-red); }
+        .summary-value.pct { color: var(--accent-blue); }
+        .summary-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; margin-top: 4px; }
+        .cluster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .cluster-card { background: var(--bg-secondary); border-radius: 16px; padding: 24px; cursor: pointer; box-shadow: var(--shadow-sm); transition: transform 0.2s, box-shadow 0.2s; position: relative; overflow: hidden; }
+        .cluster-card:hover { transform: scale(1.02); box-shadow: var(--shadow-lg); }
+        .cluster-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; opacity: 0; transition: opacity 0.2s; }
+        .cluster-card:hover::before { opacity: 1; }
+        .cluster-card.green::before { background: var(--status-green); }
+        .cluster-card.yellow::before { background: var(--status-yellow); }
+        .cluster-card.red::before { background: var(--status-red); }
+        .cluster-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
+        .status-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        .status-icon.green { background: rgba(52,199,89,0.12); color: var(--status-green); }
+        .status-icon.yellow { background: rgba(255,159,10,0.12); color: var(--status-yellow); }
+        .status-icon.red { background: rgba(255,59,48,0.12); color: var(--status-red); }
+        .cluster-name { font-size: 16px; font-weight: 600; word-break: break-word; }
+        .cluster-status { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+        .cluster-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding-top: 16px; border-top: 1px solid var(--border-color); }
+        .stat { text-align: center; }
+        .stat-value { font-size: 22px; font-weight: 600; }
+        .stat-value.healthy { color: var(--status-green); }
+        .stat-value.down { color: var(--status-red); }
+        .stat-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; }
+        .cluster-time { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color); font-size: 12px; color: var(--text-tertiary); }
+        .node-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+        .node-card { background: var(--bg-secondary); border-radius: 12px; padding: 16px; cursor: pointer; box-shadow: var(--shadow-sm); display: flex; align-items: center; gap: 12px; transition: transform 0.2s; }
+        .node-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+        .node-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .node-dot.green { background: var(--status-green); }
+        .node-dot.red { background: var(--status-red); }
+        .node-info { flex: 1; min-width: 0; }
+        .node-name { font-size: 13px; font-weight: 500; word-break: break-all; }
+        .node-status { font-size: 11px; color: var(--text-secondary); }
+        .node-arrow { color: var(--text-tertiary); }
+        .detail-card { background: var(--bg-secondary); border-radius: 16px; padding: 28px; box-shadow: var(--shadow-sm); }
+        .detail-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color); }
+        .detail-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        .detail-icon.green { background: rgba(52,199,89,0.12); color: var(--status-green); }
+        .detail-icon.red { background: rgba(255,59,48,0.12); color: var(--status-red); }
+        .detail-info h2 { font-size: 22px; font-weight: 600; }
+        .detail-info p { font-size: 14px; color: var(--text-secondary); }
+        .time-btns { display: flex; gap: 8px; margin-bottom: 20px; }
+        .time-btn { padding: 8px 16px; border: none; border-radius: 20px; background: var(--bg-tertiary); color: var(--text-secondary); font-size: 14px; cursor: pointer; }
+        .time-btn:hover { background: var(--border-color); }
+        .time-btn.active { background: var(--accent-blue); color: white; }
+        .chart-box { height: 280px; }
+        .loading { display: flex; flex-direction: column; align-items: center; padding: 60px; gap: 12px; }
+        .spinner { width: 28px; height: 28px; border: 3px solid var(--border-color); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { font-size: 14px; color: var(--text-secondary); }
+        .empty { text-align: center; padding: 60px; }
+        .empty h3 { font-size: 22px; margin-bottom: 8px; }
+        .empty p { color: var(--text-secondary); }
+        @media (max-width: 768px) { .hero h1 { font-size: 36px; } .summary { grid-template-columns: repeat(2, 1fr); } .cluster-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <nav class="nav"><div class="nav-content"><div class="nav-title">Health Monitor</div><div class="nav-time" id="navTime"></div></div></nav>
+    <div id="hero" class="hero"><h1>Cluster Health</h1><p>Monitor your infrastructure health in real-time</p></div>
+    <div class="container">
+        <div id="breadcrumb" class="breadcrumb" style="display:none"></div>
+        <div id="summary" class="summary" style="display:none"></div>
+        <div id="legend" class="legend">
+            <div class="legend-item"><div class="legend-dot green"></div>Healthy</div>
+            <div class="legend-item"><div class="legend-dot yellow"></div>Degraded</div>
+            <div class="legend-item"><div class="legend-dot red"></div>Critical</div>
+        </div>
+        <div id="content"><div class="loading"><div class="spinner"></div><div class="loading-text">Loading...</div></div></div>
+    </div>
+<script>
+let cluster=null, node=null, chart=null;
+const icon = {green:'✓', yellow:'⚠', red:'✕'};
+const txt = {green:'All Systems Operational', yellow:'Partial Outage', red:'Major Outage'};
+
+function updateTime() {
+    document.getElementById('navTime').textContent = new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+}
+setInterval(updateTime, 1000); updateTime();
+document.addEventListener('DOMContentLoaded', () => showClusters());
+
+async function showClusters() {
+    cluster = null; node = null;
+    document.getElementById('hero').style.display = 'block';
+    document.getElementById('breadcrumb').style.display = 'none';
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('legend').style.display = 'flex';
+    const el = document.getElementById('content');
+    el.innerHTML = '<div class="loading"><div class="spinner"></div><div class="loading-text">Loading clusters...</div></div>';
+    try {
+        const data = await (await fetch('/api/clusters')).json();
+        if (!data.length) { el.innerHTML = '<div class="empty"><h3>No Clusters</h3><p>No data available</p></div>'; return; }
+        let h = '<div class="cluster-grid">';
+        data.forEach(c => {
+            h += '<div class="cluster-card ' + c.status_color + '" onclick="showCluster(\'' + c.name + '\')">' +
+                '<div class="cluster-header"><div class="status-icon ' + c.status_color + '">' + icon[c.status_color] + '</div>' +
+                '<div><div class="cluster-name">' + c.name + '</div><div class="cluster-status">' + txt[c.status_color] + '</div></div></div>' +
+                '<div class="cluster-stats">' +
+                '<div class="stat"><div class="stat-value">' + c.total_nodes + '</div><div class="stat-label">Total</div></div>' +
+                '<div class="stat"><div class="stat-value healthy">' + c.healthy_nodes + '</div><div class="stat-label">Online</div></div>' +
+                '<div class="stat"><div class="stat-value down">' + c.down_nodes + '</div><div class="stat-label">Offline</div></div></div>' +
+                '<div class="cluster-time">Updated ' + fmtTime(c.last_check) + '</div></div>';
+        });
+        el.innerHTML = h + '</div>';
+    } catch (e) { el.innerHTML = '<div class="empty"><h3>Error</h3><p>' + e.message + '</p></div>'; }
+}
+
+async function showCluster(name) {
+    cluster = name; node = null;
+    document.getElementById('hero').style.display = 'none';
+    document.getElementById('legend').style.display = 'none';
+    document.getElementById('breadcrumb').style.display = 'block';
+    document.getElementById('breadcrumb').innerHTML = '<a onclick="showClusters()">All Clusters</a><span class="sep"> › </span><span>' + name + '</span>';
+    const el = document.getElementById('content');
+    el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    try {
+        const c = await (await fetch('/api/clusters/' + name)).json();
+        const pct = Math.round(c.healthy_nodes / c.total_nodes * 100);
+        document.getElementById('summary').style.display = 'grid';
+        document.getElementById('summary').innerHTML = 
+            '<div class="summary-card"><div class="summary-value total">' + c.total_nodes + '</div><div class="summary-label">Total</div></div>' +
+            '<div class="summary-card"><div class="summary-value healthy">' + c.healthy_nodes + '</div><div class="summary-label">Online</div></div>' +
+            '<div class="summary-card"><div class="summary-value down">' + c.down_nodes + '</div><div class="summary-label">Offline</div></div>' +
+            '<div class="summary-card"><div class="summary-value pct">' + pct + '%</div><div class="summary-label">Availability</div></div>';
+        let h = '<div class="node-grid">';
+        c.nodes.forEach(n => {
+            h += '<div class="node-card" onclick="showNode(\'' + name + '\',\'' + n.name + '\')">' +
+                '<div class="node-dot ' + n.status_color + '"></div>' +
+                '<div class="node-info"><div class="node-name">' + n.name + '</div><div class="node-status">' + n.status_text + '</div></div>' +
+                '<div class="node-arrow">›</div></div>';
+        });
+        el.innerHTML = h + '</div>';
+    } catch (e) { el.innerHTML = '<div class="empty"><h3>Error</h3><p>' + e.message + '</p></div>'; }
+}
+
+async function showNode(c, n) {
+    cluster = c; node = n;
+    document.getElementById('hero').style.display = 'none';
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('legend').style.display = 'none';
+    document.getElementById('breadcrumb').style.display = 'block';
+    document.getElementById('breadcrumb').innerHTML = '<a onclick="showClusters()">All Clusters</a><span class="sep"> › </span><a onclick="showCluster(\'' + c + '\')">' + c + '</a><span class="sep"> › </span><span>' + n + '</span>';
+    const el = document.getElementById('content');
+    el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    try {
+        const d = await (await fetch('/api/clusters/' + c + '/nodes/' + n)).json();
+        el.innerHTML = '<div class="detail-card">' +
+            '<div class="detail-header"><div class="detail-icon ' + d.status_color + '">' + icon[d.status_color] + '</div>' +
+            '<div class="detail-info"><h2>' + d.name + '</h2><p>' + d.cluster_name + ' • ' + d.status_text + '</p></div></div>' +
+            '<div class="time-btns">' +
+            '<button class="time-btn active" onclick="loadHist(\'' + c + '\',\'' + n + '\',6,this)">6H</button>' +
+            '<button class="time-btn" onclick="loadHist(\'' + c + '\',\'' + n + '\',12,this)">12H</button>' +
+            '<button class="time-btn" onclick="loadHist(\'' + c + '\',\'' + n + '\',24,this)">24H</button>' +
+            '<button class="time-btn" onclick="loadHist(\'' + c + '\',\'' + n + '\',48,this)">48H</button></div>' +
+            '<div class="chart-box"><canvas id="chart"></canvas></div></div>';
+        await loadHist(c, n, 6);
+    } catch (e) { el.innerHTML = '<div class="empty"><h3>Error</h3><p>' + e.message + '</p></div>'; }
+}
+
+async function loadHist(c, n, hrs, btn) {
+    if (btn) document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active')), btn.classList.add('active');
+    const d = await (await fetch('/api/clusters/' + c + '/nodes/' + n + '/history?hours=' + hrs)).json();
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('chart'), {
+        type: 'line',
+        data: {
+            labels: d.data.map(x => fmtTime(x.timestamp)),
+            datasets: [{
+                data: d.data.map(x => x.value),
+                borderColor: '#0071e3',
+                backgroundColor: 'rgba(0,113,227,0.1)',
+                fill: true, stepped: true, pointRadius: 4,
+                pointBackgroundColor: d.data.map(x => x.value === 1 ? '#34c759' : '#ff3b30'),
+                pointBorderColor: '#fff', pointBorderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { min: -0.1, max: 1.1, ticks: { stepSize: 1, callback: v => v === 1 ? 'Online' : v === 0 ? 'Offline' : '' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                x: { ticks: { maxTicksLimit: 8 }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+function fmtTime(t) {
+    if (!t) return 'N/A';
+    return new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+</script>
+</body>
+</html>
