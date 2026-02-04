@@ -103,7 +103,7 @@ MACHINE1,POD1,CH,0,Image,SKU,10.0.0.1,100,CH,100,H,None,0,0,1900-01-01,,,Cluster
         assert nodes == []
 
     def test_parse_machine_info_csv_multiple_nodes(self):
-        """Test parsing multiple nodes from CSV."""
+        """Test parsing multiple nodes from CSV, excluding UTILITY nodes."""
         csv_content = """#Version:1.0
 #Fields:MachineName,PodName,MachineFunction,Port,Image,SKU,StaticIP,ScaleUnit,staticFunction,staticScaleunit,status,repair,netMask,Freeze,FreezeEndsAt,ConnectedTo,Enclosure,Environment,PhysicalMachineName
 NODE001,POD1,CH,0,Image,SKU,10.0.0.1,100,CH,100,H,None,0,0,1900-01-01,,,Cluster1,NODE001
@@ -113,11 +113,13 @@ NODE003,POD1,UTILITY,0,Image,SKU,10.0.0.3,100,UTILITY,100,P,None,0,0,1900-01-01,
 
         nodes = PowerShellClusterProvider.parse_machine_info_csv(csv_content)
 
-        assert len(nodes) == 3
+        # UTILITY nodes are filtered out, so only 2 CH nodes should remain
+        assert len(nodes) == 2
         assert nodes[0].name == "NODE001"
         assert nodes[1].name == "NODE002"
-        assert nodes[2].name == "NODE003"
-        assert nodes[2].type == "UTILITY"
+        # Verify UTILITY node is not included
+        node_names = [n.name for n in nodes]
+        assert "NODE003" not in node_names
 
     def test_parse_machine_info_csv_node_with_different_status(self):
         """Test nodes with different status values."""
@@ -134,14 +136,17 @@ PENDING_NODE,POD1,CH,0,Image,SKU,10.0.0.2,100,CH,100,P,None,0,0,1900-01-01,,,Clu
         assert nodes[1].attributes["status"] == "P"
 
     def test_parse_actual_machineinfo_file_node_count(self):
-        """Test that actual machineinfo.csv has expected number of nodes."""
+        """Test that actual machineinfo.csv has expected number of CH nodes (excluding UTILITY)."""
         with open(TEST_MACHINEINFO_CSV, 'r', encoding='utf-8') as f:
             csv_content = f.read()
 
         nodes = PowerShellClusterProvider.parse_machine_info_csv(csv_content)
 
-        # The file should have more than 40 nodes based on the content
-        assert len(nodes) >= 40
+        # The file has 40 total nodes, but 1 is UTILITY, so 39 CH nodes remain
+        assert len(nodes) == 39
+        # Verify no UTILITY nodes are included
+        for node in nodes:
+            assert node.type != "UTILITY"
 
     def test_parse_actual_machineinfo_file_specific_node(self):
         """Test that specific node MWHEEEAP003CB01 is correctly parsed."""

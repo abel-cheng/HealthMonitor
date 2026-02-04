@@ -286,6 +286,10 @@ class PowerShellClusterProvider(ClusterInfoProvider):
             if not machine_name:
                 continue
 
+            # Skip UTILITY nodes - they are not ClickHouse nodes
+            if machine_function.upper() == 'UTILITY':
+                continue
+
             node = Node(
                 name=machine_name,
                 type=machine_function,
