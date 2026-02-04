@@ -7,6 +7,7 @@ from .collector import (
     MetricCollector,
     ClickHouseStatusCollector,
     MetricStorage,
+    JsonMetricStorage,
     MetricRegistry,
     create_default_registry
 )
@@ -16,6 +17,7 @@ __all__ = [
     'MetricCollector',
     'ClickHouseStatusCollector',
     'MetricStorage',
+    'JsonMetricStorage',
     'MetricRegistry',
     'create_default_registry'
 ]

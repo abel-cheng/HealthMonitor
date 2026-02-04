@@ -398,6 +398,90 @@ class MetricStorage:
         for metric in metrics:
             self.store(metric)
 
+
+class JsonMetricStorage:
+    """
+    Handles storage of metrics to JSON files.
+    
+    Directory structure: <base_dir>/<cluster>/<year>/<month>/<day>/ServceLogs_<timestamp>.json
+    JSON format: Array of {clustername, machinename, metricname, metricvalue, logtime}
+    
+    每次采集生成一个新文件（不增量追加）。
+    """
+    
+    # Metric ID 定义
+    METRIC_ID_PING = "ch_ping"
+    
+    # 默认日志根目录
+    DEFAULT_LOG_ROOT = r"D:\ServiceHealthMatrixLogs"
+
+    def __init__(self, base_dir: str = None):
+        self.base_dir = base_dir or self.DEFAULT_LOG_ROOT
+        self._lock = threading.Lock()
+
+    def _format_metric_json(self, metric: MetricValue, metric_id: str = None) -> dict:
+        """格式化为 JSON 对象"""
+        return {
+            "clustername": metric.cluster_name,
+            "machinename": metric.node_name,
+            "metricname": metric_id or self.METRIC_ID_PING,
+            "metricvalue": metric.value,
+            "logtime": metric.timestamp[:19]  # YYYY-MM-DDTHH:MM:SS
+        }
+
+    def _get_file_path(self, cluster_name: str, timestamp: datetime = None) -> str:
+        """
+        Generate JSON file path.
+        Format: <base_dir>/<cluster>/<year>/<month>/<day>/ServceLogs_<timestamp>.json
+        """
+        if timestamp is None:
+            timestamp = datetime.utcnow()
+        
+        year = timestamp.strftime("%Y")
+        month = timestamp.strftime("%m")
+        day = timestamp.strftime("%d")
+        time_str = timestamp.strftime("%Y%m%d%H%M")
+        
+        # 目录结构: <base_dir>/<cluster>/<year>/<month>/<day>/
+        date_dir = os.path.join(self.base_dir, cluster_name, year, month, day)
+        os.makedirs(date_dir, exist_ok=True)
+        
+        # 文件名: ServceLogs_<timestamp>.json
+        return os.path.join(date_dir, f"ServceLogs_{time_str}.json")
+
+    def store_batch(self, metrics: List[MetricValue], metric_id: str = None) -> str:
+        """
+        Store multiple metrics to a single JSON file.
+        
+        Args:
+            metrics: List of MetricValue objects
+            metric_id: Optional metric ID (default: ch_ping)
+        
+        Returns:
+            Path to the saved JSON file
+        """
+        if not metrics:
+            return None
+        
+        # 使用第一个 metric 的 cluster_name
+        cluster_name = metrics[0].cluster_name
+        now = datetime.utcnow()
+        json_file = self._get_file_path(cluster_name, now)
+        
+        # 构建 JSON 数据
+        json_data = [self._format_metric_json(m, metric_id) for m in metrics]
+        
+        with self._lock:
+            # 写入 JSON 文件（覆盖写入，不增量追加）
+            with open(json_file, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, indent=2, ensure_ascii=False)
+        
+        return json_file
+
+    def store(self, metric: MetricValue, metric_id: str = None) -> str:
+        """Store a single metric value to JSON file."""
+        return self.store_batch([metric], metric_id)
+
     def _get_query_file_path(self, cluster_name: str, node_name: str, timestamp: datetime) -> str:
         """Generate file path for querying based on cluster, node, and hour."""
         date_dir = timestamp.strftime("%Y/%m/%d")

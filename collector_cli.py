@@ -40,7 +40,7 @@ try:
         Node
     )
     from src.metrics.collector import (
-        MetricStorage,
+        JsonMetricStorage,
         MetricValue,
         MetricCollector,
         get_all_collectors,
@@ -183,8 +183,8 @@ Provider Types:
                         default=8123,
                         help='ClickHouse HTTP port (default: 8123)')
     parser.add_argument('--output-dir', '-o',
-                        default='D:\\metrics',
-                        help='Output directory for metric log files (default: D:\\metrics)')
+                        default=r'D:\ServiceHealthMatrixLogs',
+                        help='Output directory for JSON log files (default: D:\\ServiceHealthMatrixLogs)')
     parser.add_argument('--stdout', action='store_true',
                         help='Output metrics to stdout as JSON instead of log files')
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -234,8 +234,8 @@ Provider Types:
     logger.info(f"Found cluster: {target_cluster.name} with {len(target_cluster.nodes)} nodes")
     logger.info(f"Collecting clickhouse_status metric on port {args.port}")
 
-    # Initialize storage (using MetricStorage from src.metrics.collector)
-    storage = MetricStorage(base_dir=args.output_dir)
+    # Initialize storage (using JsonMetricStorage from src.metrics.collector)
+    storage = JsonMetricStorage(base_dir=args.output_dir)
 
     # Collect metrics for each node
     all_metrics: List[MetricValue] = []
@@ -245,19 +245,16 @@ Provider Types:
         
         metrics = collect_metrics_for_node(node, target_cluster.name, args.port, logger)
         all_metrics.extend(metrics)
-        
-        if not args.stdout:
-            # Store metrics using MetricStorage
-            storage.store_batch(metrics)
-            logger.debug(f"  Stored {len(metrics)} metrics for {node.name}")
 
     # Output results
     if args.stdout:
         output = [m.to_dict() for m in all_metrics]
         print(json.dumps(output, indent=2, ensure_ascii=False))
     else:
+        # Store all metrics to a single JSON file per cluster
+        json_file = storage.store_batch(all_metrics)
         logger.info(f"Collection complete. Total metrics collected: {len(all_metrics)}")
-        logger.info(f"Metrics stored to: {args.output_dir}")
+        logger.info(f"Metrics saved to: {json_file}")
 
     return 0
 
