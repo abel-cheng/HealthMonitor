@@ -20,6 +20,17 @@ import sys
 from json_storage import JsonMetricReader
 
 
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        import sys
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.dirname(__file__)
+    return os.path.join(base_path, relative_path)
+
+
 def create_app(base_dir: str) -> Flask:
     """
     Create and configure the Flask application.
@@ -30,9 +41,22 @@ def create_app(base_dir: str) -> Flask:
     Returns:
         Configured Flask application
     """
+    # Get template and static folders - support both dev and PyInstaller
+    template_folder = get_resource_path('src/web/templates')
+    if not os.path.exists(template_folder):
+        template_folder = get_resource_path('templates')
+    if not os.path.exists(template_folder):
+        template_folder = os.path.join(os.path.dirname(__file__), 'templates')
+    
+    static_folder = get_resource_path('src/web/static')
+    if not os.path.exists(static_folder):
+        static_folder = get_resource_path('static')
+    if not os.path.exists(static_folder):
+        static_folder = os.path.join(os.path.dirname(__file__), 'static')
+    
     app = Flask(__name__,
-                template_folder=os.path.join(os.path.dirname(__file__), 'templates'),
-                static_folder=os.path.join(os.path.dirname(__file__), 'static'))
+                template_folder=template_folder,
+                static_folder=static_folder)
     
     # Initialize JSON metric reader
     reader = JsonMetricReader(base_dir)

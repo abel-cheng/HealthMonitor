@@ -34,23 +34,24 @@ def clean_build():
     dirs_to_remove = [
         os.path.join(BUILD_DIR, APP_NAME),
         os.path.join(DIST_DIR, APP_NAME),
-        os.path.join(DIST_DIR, f"{APP_NAME}.exe"),
     ]
     
     files_to_remove = [
         f"{APP_NAME}.spec",
+        os.path.join(DIST_DIR, f"{APP_NAME}.exe"),
+        os.path.join(DIST_DIR, "run_dashboard.bat"),
     ]
     
     for d in dirs_to_remove:
-        if os.path.exists(d):
+        if os.path.exists(d) and os.path.isdir(d):
             shutil.rmtree(d)
-            print(f"  Removed: {d}")
+            print(f"  Removed dir: {d}")
     
     for f in files_to_remove:
-        path = os.path.join(SCRIPT_DIR, f)
-        if os.path.exists(path):
+        path = f if os.path.isabs(f) else os.path.join(SCRIPT_DIR, f)
+        if os.path.exists(path) and os.path.isfile(path):
             os.remove(path)
-            print(f"  Removed: {path}")
+            print(f"  Removed file: {path}")
     
     print("Clean complete.\n")
 
@@ -91,6 +92,8 @@ def build_app(onefile=True):
         '--name', APP_NAME,
         '--noconfirm',
         '--clean',
+        # Add src/web to Python path so dashboard module can be found
+        '--paths', 'src/web',
     ]
     
     # One file or one directory
@@ -111,6 +114,8 @@ def build_app(onefile=True):
         'click',
         'itsdangerous',
         'markupsafe',
+        'dashboard',
+        'json_storage',
     ]
     
     for imp in hidden_imports:
