@@ -92,7 +92,7 @@ def collect_metrics_for_node(node, cluster_name: str,
     """
     metrics = []
     # Create collectors for this specific node's host with debug mode
-    collectors = get_all_collectors(host=node.host, port=port, debug=debug)
+    collectors = get_all_collectors(host=node.name, port=port, debug=debug)
     
     for collector in collectors:
         try:
@@ -247,7 +247,7 @@ Provider Types:
     all_metrics: List[MetricValue] = []
     
     for node in target_cluster.nodes:
-        logger.info(f"Collecting metrics for node: {node.name} (host: {node.host})")
+        logger.info(f"Collecting metrics for node: {node.name} (host: {node.name})")
         
         metrics = collect_metrics_for_node(node, target_cluster.name, args.port, logger, debug=args.debug)
         all_metrics.extend(metrics)
