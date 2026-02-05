@@ -70,42 +70,71 @@ class ClickHouseStatusCollector(MetricCollector):
     """
 
     def __init__(self, host: str = "localhost", port: int = 8123,
-                 interval: int = 60, timeout: int = 10):
+                 interval: int = 60, timeout: int = 10, debug: bool = False):
         super().__init__(name="clickhouse_status", unit="", interval=interval)
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.debug = debug
 
     def _get_base_url(self) -> str:
         return f"http://{self.host}:{self.port}"
+
+    def _debug_print(self, message: str) -> None:
+        """Print debug message if debug mode is enabled."""
+        if self.debug:
+            print(f"[DEBUG] {message}")
 
     def collect(self, node_name: str, cluster_name: str, **kwargs) -> MetricValue:
         """
         Check ClickHouse health via /ping endpoint.
         Returns 1 if healthy, 0 if unhealthy or unreachable.
         """
+        url = f"{self._get_base_url()}/ping"
+        
+        # Print equivalent curl command in debug mode
+        curl_cmd = f"curl -s -m {self.timeout} '{url}'"
+        self._debug_print(f"Node: {node_name}")
+        self._debug_print(f"Curl command: {curl_cmd}")
+        
         try:
-            url = f"{self._get_base_url()}/ping"
             response = requests.get(url, timeout=self.timeout)
-            status = 1 if response.status_code == 200 and response.text.strip() == "Ok." else 0
-        except Exception:
+            response_text = response.text.strip()
+            status = 1 if response.status_code == 200 and response_text == "Ok." else 0
+            
+            # Print response in debug mode
+            self._debug_print(f"HTTP Status: {response.status_code}")
+            self._debug_print(f"Response: {response_text}")
+            self._debug_print(f"Result: {status} ({'healthy' if status == 1 else 'unhealthy'})")
+            
+        except requests.exceptions.Timeout:
+            self._debug_print(f"Error: Connection timeout after {self.timeout}s")
             status = 0
+        except requests.exceptions.ConnectionError as e:
+            self._debug_print(f"Error: Connection failed - {e}")
+            status = 0
+        except Exception as e:
+            self._debug_print(f"Error: {type(e).__name__} - {e}")
+            status = 0
+        
+        self._debug_print("-" * 50)
         return self._create_metric(node_name, cluster_name, status)
 
 
-def get_all_collectors(host: str = "localhost", port: int = 8123) -> List[MetricCollector]:
+def get_all_collectors(host: str = "localhost", port: int = 8123, debug: bool = False) -> List[MetricCollector]:
     """
     Get all available metric collectors.
     
     Args:
         host: ClickHouse host address
         port: ClickHouse HTTP port
+        debug: Enable debug mode to print curl commands and results
     
     Returns:
         List of metric collectors (currently only ClickHouseStatusCollector)
     """
     return [
-        ClickHouseStatusCollector(host=host, port=port),
+        ClickHouseStatusCollector(host=host, port=port, debug=debug),
     ]
 
 
@@ -663,17 +692,18 @@ class MetricRegistry:
         return metrics
 
 
-def create_default_registry(host: str = "localhost", port: int = 8123) -> MetricRegistry:
+def create_default_registry(host: str = "localhost", port: int = 8123, debug: bool = False) -> MetricRegistry:
     """
     Create a registry with ClickHouse ping collector.
     
     Args:
         host: ClickHouse server hostname
         port: ClickHouse HTTP port (default 8123)
+        debug: Enable debug mode to print curl commands and results
     
     Collectors:
         - clickhouse_status: Ping check (1=healthy, 0=offline)
     """
     registry = MetricRegistry()
-    registry.register(ClickHouseStatusCollector(host=host, port=port))
+    registry.register(ClickHouseStatusCollector(host=host, port=port, debug=debug))
     return registry

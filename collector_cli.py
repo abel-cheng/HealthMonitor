@@ -75,7 +75,8 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
 
 def collect_metrics_for_node(node, cluster_name: str,
                               port: int,
-                              logger: logging.Logger) -> List[MetricValue]:
+                              logger: logging.Logger,
+                              debug: bool = False) -> List[MetricValue]:
     """
     Collect all metrics for a single node.
     
@@ -84,13 +85,14 @@ def collect_metrics_for_node(node, cluster_name: str,
         cluster_name: Name of the cluster
         port: ClickHouse HTTP port
         logger: Logger instance
+        debug: Enable debug mode to print curl commands and responses
     
     Returns:
         List of collected MetricValue objects
     """
     metrics = []
-    # Create collectors for this specific node's host
-    collectors = get_all_collectors(host=node.host, port=port)
+    # Create collectors for this specific node's host with debug mode
+    collectors = get_all_collectors(host=node.host, port=port, debug=debug)
     
     for collector in collectors:
         try:
@@ -189,6 +191,8 @@ Provider Types:
                         help='Output metrics to stdout as JSON instead of log files')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Enable verbose output')
+    parser.add_argument('--debug', '-d', action='store_true',
+                        help='Enable debug mode (print curl commands and responses)')
 
     args = parser.parse_args()
 
@@ -233,6 +237,8 @@ Provider Types:
 
     logger.info(f"Found cluster: {target_cluster.name} with {len(target_cluster.nodes)} nodes")
     logger.info(f"Collecting clickhouse_status metric on port {args.port}")
+    if args.debug:
+        logger.info("Debug mode enabled - curl commands and responses will be printed")
 
     # Initialize storage (using JsonMetricStorage from src.metrics.collector)
     storage = JsonMetricStorage(base_dir=args.output_dir)
@@ -243,7 +249,7 @@ Provider Types:
     for node in target_cluster.nodes:
         logger.info(f"Collecting metrics for node: {node.name} (host: {node.host})")
         
-        metrics = collect_metrics_for_node(node, target_cluster.name, args.port, logger)
+        metrics = collect_metrics_for_node(node, target_cluster.name, args.port, logger, debug=args.debug)
         all_metrics.extend(metrics)
 
     # Output results
