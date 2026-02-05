@@ -405,14 +405,13 @@ class JsonMetricStorage:
     
     Directory structure: <base_dir>/<cluster>/<year>/<month>/<day>/ServceLogs_<timestamp>.json
     JSON format: Array of {clustername, machinename, metricname, metricvalue, logtime}
-    
-    每次采集生成一个新文件（不增量追加）。
+
     """
     
-    # Metric ID 定义
+    # Metric ID definition
     METRIC_ID_PING = "ch_ping"
     
-    # 默认日志根目录
+    # Default log root directory
     DEFAULT_LOG_ROOT = r"D:\ServiceHealthMatrixLogs"
 
     def __init__(self, base_dir: str = None):
@@ -420,7 +419,7 @@ class JsonMetricStorage:
         self._lock = threading.Lock()
 
     def _format_metric_json(self, metric: MetricValue, metric_id: str = None) -> dict:
-        """格式化为 JSON 对象"""
+        """Format metric as JSON object."""
         return {
             "clustername": metric.cluster_name,
             "machinename": metric.node_name,
@@ -442,11 +441,11 @@ class JsonMetricStorage:
         day = timestamp.strftime("%d")
         time_str = timestamp.strftime("%Y%m%d%H%M")
         
-        # 目录结构: <base_dir>/<cluster>/<year>/<month>/<day>/
+        # Directory structure: <base_dir>/<cluster>/<year>/<month>/<day>/
         date_dir = os.path.join(self.base_dir, cluster_name, year, month, day)
         os.makedirs(date_dir, exist_ok=True)
         
-        # 文件名: ServceLogs_<timestamp>.json
+        # Filename: ServceLogs_<timestamp>.json
         return os.path.join(date_dir, f"ServceLogs_{time_str}.json")
 
     def store_batch(self, metrics: List[MetricValue], metric_id: str = None) -> str:
@@ -463,16 +462,16 @@ class JsonMetricStorage:
         if not metrics:
             return None
         
-        # 使用第一个 metric 的 cluster_name
+        # Use cluster_name from the first metric
         cluster_name = metrics[0].cluster_name
         now = datetime.utcnow()
         json_file = self._get_file_path(cluster_name, now)
         
-        # 构建 JSON 数据
+        # Build JSON data
         json_data = [self._format_metric_json(m, metric_id) for m in metrics]
         
         with self._lock:
-            # 写入 JSON 文件（覆盖写入，不增量追加）
+            # Write JSON file (overwrite, no incremental append)
             with open(json_file, 'w', encoding='utf-8') as f:
                 json.dump(json_data, f, indent=2, ensure_ascii=False)
         
@@ -536,16 +535,16 @@ class JsonMetricStorage:
     def get_health_timeline(self, cluster_name: str, node_name: str,
                             start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
         """
-        获取节点健康状态的时间序列，展示状态变化。
+        Get node health status timeline showing status changes.
         
         Args:
-            cluster_name: 集群名称
-            node_name: 节点名称
-            start_time: 开始时间
-            end_time: 结束时间
+            cluster_name: Cluster name
+            node_name: Node name
+            start_time: Start time
+            end_time: End time
         
         Returns:
-            时间序列列表，包含时间戳、状态值、以及状态变化标记
+            Timeline list containing timestamp, status value, and status change markers
         """
         metrics = self.query(cluster_name, node_name, start_time, end_time, "clickhouse_status")
         
@@ -559,9 +558,9 @@ class JsonMetricStorage:
             timeline.append({
                 'timestamp': m['timestamp'],
                 'status': status,
-                'status_text': '健康' if status == 1 else '离线',
+                'status_text': 'healthy' if status == 1 else 'offline',
                 'changed': changed,
-                'change_type': None if not changed else ('恢复' if status == 1 else '故障')
+                'change_type': None if not changed else ('recovered' if status == 1 else 'failed')
             })
             prev_status = status
         
@@ -570,10 +569,10 @@ class JsonMetricStorage:
     def get_health_summary(self, cluster_name: str, node_name: str,
                            start_time: datetime, end_time: datetime) -> Dict[str, Any]:
         """
-        获取节点健康状态摘要，包括在线/离线时间段统计。
+        Get node health status summary including online/offline time statistics.
         
         Returns:
-            包含健康状态统计的字典
+            Dictionary containing health status statistics
         """
         timeline = self.get_health_timeline(cluster_name, node_name, start_time, end_time)
         
@@ -592,7 +591,7 @@ class JsonMetricStorage:
         healthy_count = sum(1 for t in timeline if t['status'] == 1)
         unhealthy_count = len(timeline) - healthy_count
         
-        # 记录状态变化点
+        # Record status change points
         status_changes = [t for t in timeline if t['changed']]
         
         return {
@@ -609,7 +608,7 @@ class JsonMetricStorage:
         }
 
     def list_clusters(self) -> List[str]:
-        """列出所有集群名称。"""
+        """List all cluster names."""
         clusters = []
         if os.path.exists(self.base_dir):
             for name in os.listdir(self.base_dir):
@@ -618,7 +617,7 @@ class JsonMetricStorage:
         return clusters
 
     def list_nodes(self, cluster_name: str) -> List[str]:
-        """列出集群中所有节点。"""
+        """List all nodes in a cluster."""
         nodes = []
         cluster_dir = os.path.join(self.base_dir, cluster_name)
         if os.path.exists(cluster_dir):
@@ -673,7 +672,7 @@ def create_default_registry(host: str = "localhost", port: int = 8123) -> Metric
         port: ClickHouse HTTP port (default 8123)
     
     Collectors:
-        - clickhouse_status: Ping检测 (1=健康, 0=离线)
+        - clickhouse_status: Ping check (1=healthy, 0=offline)
     """
     registry = MetricRegistry()
     registry.register(ClickHouseStatusCollector(host=host, port=port))
